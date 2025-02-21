@@ -1,10 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import Select from 'react-select';
 
-
 const API_URL = 'https://bfhl-backend-9wfy.onrender.com';
 const ROLL_NUMBER = '2237889';
+
+const filterOptions = [
+  { value: 'numbers', label: 'Numbers' },
+  { value: 'alphabets', label: 'Alphabets' },
+  { value: 'highest_alphabet', label: 'Highest alphabet' }
+];
+
+const baseResponseFields = ['is_success', 'user_id', 'email', 'roll_number'];
 
 function App() {
   const [inputData, setInputData] = useState('');
@@ -14,26 +21,28 @@ function App() {
   const [selectedFilters, setSelectedFilters] = useState([]);
   const [submitted, setSubmitted] = useState(false);
 
-  // Update document title on component mount
   useEffect(() => {
     document.title = ROLL_NUMBER;
   }, []);
 
-  // Filter options for multi-select dropdown
-  const filterOptions = [
-    { value: 'numbers', label: 'Numbers' },
-    { value: 'alphabets', label: 'Alphabets' },
-    { value: 'highest_alphabet', label: 'Highest alphabet' }
-  ];
+  const validateInput = useCallback((input) => {
+    try {
+      const parsedData = JSON.parse(input);
+      if (!parsedData.data || !Array.isArray(parsedData.data)) {
+        throw new Error('Input must contain a "data" field with an array.');
+      }
+      return parsedData;
+    } catch (err) {
+      throw new Error('Invalid JSON format. Please check your input.');
+    }
+  }, []);
 
-  // Handle input change
-  const handleInputChange = (e) => {
+  const handleInputChange = useCallback((e) => {
     setInputData(e.target.value);
     setError('');
-  };
+  }, []);
 
-  // Handle form submission
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -41,20 +50,8 @@ function App() {
     setSubmitted(false);
 
     try {
-      // Validate JSON format
-      let parsedData;
-      try {
-        parsedData = JSON.parse(inputData);
-      } catch (err) {
-        throw new Error('Invalid JSON format. Please check your input.');
-      }
+      validateInput(inputData);
 
-      // Validate data structure
-      if (!parsedData.data || !Array.isArray(parsedData.data)) {
-        throw new Error('Input must contain a "data" field with an array.');
-      }
-
-      // Make API call
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
@@ -76,35 +73,28 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [inputData, validateInput]);
 
-  // Handle filter selection change
-  const handleFilterChange = (selectedOptions) => {
+  const handleFilterChange = useCallback((selectedOptions) => {
     setSelectedFilters(selectedOptions || []);
-  };
+  }, []);
 
-  // Filter response based on selected filters
-  const getFilteredResponse = () => {
+  const getFilteredResponse = useCallback(() => {
     if (!response) return null;
     
-    const filteredResponse = {};
-    const selectedKeys = selectedFilters.map(filter => filter.value);
+    const filteredResponse = baseResponseFields.reduce((acc, field) => ({
+      ...acc,
+      [field]: response[field]
+    }), {});
     
-    // Always include these fields
-    filteredResponse.is_success = response.is_success;
-    filteredResponse.user_id = response.user_id;
-    filteredResponse.email = response.email;
-    filteredResponse.roll_number = response.roll_number;
-    
-    // Add selected fields based on filters
-    selectedKeys.forEach(key => {
-      if (response[key] !== undefined) {
-        filteredResponse[key] = response[key];
+    selectedFilters.forEach(({ value }) => {
+      if (response[value] !== undefined) {
+        filteredResponse[value] = response[value];
       }
     });
     
     return filteredResponse;
-  };
+  }, [response, selectedFilters]);
 
   return (
     <div className="app-container">
@@ -124,12 +114,12 @@ function App() {
             />
           </div>
           
-          <button type="submit" disabled={loading}>
+          <button type="submit" disabled={loading || !inputData.trim()}>
             {loading ? 'Processing...' : 'Submit'}
           </button>
         </form>
         
-        {error && <div className="error-message">{error}</div>}
+        {error && <div className="error-message" role="alert">{error}</div>}
       </div>
 
       {submitted && (
@@ -143,6 +133,7 @@ function App() {
             classNamePrefix="select"
             onChange={handleFilterChange}
             placeholder="Select filters..."
+            aria-label="Select filters"
           />
         </div>
       )}
